@@ -12,6 +12,7 @@ Built as a portfolio project to demonstrate full-stack Shopify app development u
 - **Percentage or fixed-amount** discounts, configurable per campaign
 - **Custom code length** — control character count for generated codes
 - **Start date scheduling** — set when each discount campaign goes live
+- **Targeted discount scope** — apply codes to all products, specific collections, or specific products
 - **Two-phase Shopify API flow**:
   1. `discountCodeBasicCreate` — creates the discount with the first code
   2. `discountRedeemCodeBulkAdd` — bulk-attaches all remaining codes atomically
@@ -61,16 +62,23 @@ bulk-discount-codes/
 ```
 Merchant fills form
        ↓
+Select scope: All Products | Specific Collections | Specific Products
+       ↓
 POST /app/creatediscount (action)
        ↓
 Generate N unique codes (alphanumeric Set)
        ↓
-discountCodeBasicCreate(firstCode)    ← Shopify Admin GraphQL
+discountCodeBasicCreate(firstCode, customerGets.items)  ← Shopify Admin GraphQL
        ↓
-discountRedeemCodeBulkAdd(restCodes)  ← Shopify Admin GraphQL
+discountRedeemCodeBulkAdd(restCodes)                    ← Shopify Admin GraphQL
        ↓
 Return codes list → render in UI
 ```
+
+**`customerGets.items` is built based on scope selection:**
+- `"all"` → `{ all: true }`
+- `"collections"` → `{ collections: { add: [selectedCollectionIds] } }`
+- `"products"` → `{ products: { productsToAdd: [selectedProductIds] } }`
 
 ---
 
@@ -116,7 +124,29 @@ Shopify CLI will open a browser to install the app on your development store. On
 
 ```
 write_discounts
-read_discounts
+write_products
+```
+
+> `write_products` is required to fetch the store's product and collection lists for targeted discount scoping.
+
+### Loader Queries
+
+**Fetch all collections (for scope selector)**
+```graphql
+query {
+  collections(first: 250) {
+    edges { node { id title } }
+  }
+}
+```
+
+**Fetch all products (for scope selector)**
+```graphql
+query {
+  products(first: 250) {
+    edges { node { id title } }
+  }
+}
 ```
 
 ### Mutations Used
@@ -150,6 +180,7 @@ mutation discountRedeemCodeBulkAdd($discountId: ID!, $codes: [DiscountRedeemCode
 - Codes are generated using an alphanumeric character set and deduplicated with a `Set` before submission
 - All GraphQL errors are surfaced to the merchant via `userErrors` — no silent failures
 - The app uses **session-token authentication** (embedded mode) — no cookies, no redirects in normal flow
+- Loader queries (collections + products) are run **sequentially**, not in parallel — the Shopify `admin` client reuses the same session token and is not safe for concurrent requests
 
 ---
 
